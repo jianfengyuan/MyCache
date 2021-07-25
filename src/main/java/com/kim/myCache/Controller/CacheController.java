@@ -1,20 +1,34 @@
 package com.kim.myCache.Controller;
 
-import com.kim.myCache.Cache.Entry;
-import org.springframework.stereotype.Controller;
+import com.kim.myCache.Cache.Cache;
+import com.kim.myCache.Entities.Entry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.Resource;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @RestController
 public class CacheController{
+    @Resource
+    private Cache<String,String> cache;
     @GetMapping(value = "/cache/{key}")
     public String Get(@PathVariable("key") String key){
-        return "";
+
+        return cache.get(key);
     }
 
-    @PutMapping(value = "/cache")
-    public String Store(@RequestBody List<Entry> entryList) {
+    @PostMapping(value = "/cache")
+    public String Store(@RequestBody List<Entry<String,String>> entryList) {
+        for (Entry e :
+                entryList) {
+            if (e.getExpireTime() == null) {
+                cache.add((String) e.getKey(), (String) e.getValue());
+            } else {
+                cache.add((String) e.getKey(), (String) e.getValue(), e.getExpireTime(), TimeUnit.SECONDS);
+            }
+        }
         return "ok";
     }
 }

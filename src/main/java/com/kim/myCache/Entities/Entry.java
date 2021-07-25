@@ -1,43 +1,50 @@
-package com.kim.myCache.Cache;
+package com.kim.myCache.Entities;
 
 import java.io.Serializable;
+import java.util.concurrent.TimeUnit;
 
-public class Entry implements Serializable {
+public class  Entry<K,V> implements Serializable {
     private static final long serialVersionUID = 1918373817726811488L;
-    private String key;
-    private String value;
+    private K key;
+    private V value;
     private Long expireTime;
     private Long createTime;
+    private TimeUnit unit;
 
-    public Entry(String key, String value) {
+    public Entry() {
+
+    }
+
+    public Entry(K key, V value) {
         this.key = key;
         this.value = value;
         this.createTime = System.currentTimeMillis();
     }
 
-    public Entry(String key, String value, Long expireTime) {
+    public Entry(K key, V value, Long expireTime, TimeUnit unit) {
         this.key = key;
         this.value = value;
         this.expireTime = expireTime;
         this.createTime = System.currentTimeMillis();
+        this.unit = unit;
     }
 
     public Boolean isExpire() {
-        return System.currentTimeMillis() - expireTime > createTime;
+        return System.currentTimeMillis() - unit.toMillis(expireTime)> createTime;
     }
-    public String getKey() {
+    public K getKey() {
         return key;
     }
 
-    public void setKey(String key) {
+    public void setKey(K key) {
         this.key = key;
     }
 
-    public String getValue() {
+    public V getValue() {
         return value;
     }
 
-    public void setValue(String value) {
+    public void setValue(V value) {
         this.value = value;
     }
 
