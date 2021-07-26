@@ -23,11 +23,7 @@ public class CacheController{
     public String Store(@RequestBody List<Entry<String,String>> entryList) {
         for (Entry e :
                 entryList) {
-            if (e.getExpireTime() == null) {
-                cache.add((String) e.getKey(), (String) e.getValue());
-            } else {
-                cache.add((String) e.getKey(), (String) e.getValue(), e.getExpireTime(), TimeUnit.SECONDS);
-            }
+            cache.add(e);
         }
         return "ok";
     }

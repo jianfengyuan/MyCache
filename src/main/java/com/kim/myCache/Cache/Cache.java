@@ -8,9 +8,8 @@ import java.util.concurrent.TimeUnit;
 
 public interface Cache<K,V> {
     Logger logger = LoggerFactory.getLogger(Cache.class);
-    Boolean add(K key,V value);
 
-    Boolean add(K key, V value, Long expireTime, TimeUnit unit);
+    Boolean add(Entry<K, V> entry);
 
     V get(K key);
 

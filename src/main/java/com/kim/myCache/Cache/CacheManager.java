@@ -1,10 +1,15 @@
 package com.kim.myCache.Cache;
 
 import com.kim.myCache.Entities.Entry;
+import com.kim.myCache.Utils.FileWriterReader;
 import com.kim.myCache.Utils.ThreadPoolUtils;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import com.kim.myCache.Cache.EventExecutor.Event;
+import org.springframework.util.ResourceUtils;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,19 +17,54 @@ import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
+/***
+ * @Author kim_yuan
+ * @Description main implementation for simple cache
+ * @Date 9:36 上午 26/7/21
+ * @return
+ **/
 public class CacheManager<K,V> implements Cache<K,V>, InitializingBean, DisposableBean {
-    private static final long MAX_ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP = 1<<30;
+    private static final long MAX_ACTIVE_EXPIRE_CYCLE_LOOKUPS_PER_LOOP = 1<<8;
     private long countThreadsHold=50;
     private Map<K, Entry<K,V>> dataMap;
+    private Map<K, Long> timeMap;
     private ScheduledExecutorService scheduler;
+    private FileWriterReader wr;
+    private EventExecutor eventExecutor;
+    private String cacheRoot;
 
-
+    /***
+     * @Author kim_yuan
+     * @Description CacheManager initialization
+     * @Date 9:37 上午 26/7/21
+     * @param
+     * @return void
+     **/
     private void init() {
-        dataMap = new ConcurrentHashMap<>();
+        try {
+            String path = ResourceUtils.getURL("classpath:").getPath() +File.separator+ "cache";
+            File file = new File(path);
+            if (! file.exists()) {
+                file.mkdir();
+            }
+            cacheRoot = path;
+        }catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        dataMap = new LRUConcurrentCache<>(64,1<<16);
+        timeMap = new ConcurrentHashMap<>();
+        wr = new FileWriterReader(cacheRoot);
+        eventExecutor = new EventExecutor(wr);
         initExpireScheduler();
     }
 
+    /***
+     * @Author kim_yuan
+     * @Description ExpireScheduler initialization
+     * @Date 9:40 上午 26/7/21
+     * @param
+     * @return void
+     **/
     private void initExpireScheduler() {
         scheduler = ThreadPoolUtils.createScheduledThread();
         scheduler.scheduleWithFixedDelay(new Runnable() {
@@ -41,26 +81,32 @@ public class CacheManager<K,V> implements Cache<K,V>, InitializingBean, Disposab
             }
         },1,1,TimeUnit.SECONDS);
     }
-
+    /***
+     * @Author kim_yuan
+     * @Description To check and remove expire caches from LRU cache and disk.
+     * @Date 9:42 上午 26/7/21
+     * @param
+     * @return java.lang.Boolean
+     **/
     private Boolean expireCheckAndRemove() {
-        int size = dataMap.size();
+        int timeSize = timeMap.size();
         Random random = new Random();
         random.setSeed(System.currentTimeMillis());
-        Cache.logger.info("current cache size: " + size);
+        Cache.logger.info("current cache size: " + timeSize);
         Cache.logger.info("current countThreadsHold: " + countThreadsHold);
-        if (size ==0) {
+        if (timeSize ==0) {
             return false;
         }
         int count = 0;
         int expire_count = 0;
         List<String> expireList = new ArrayList<>();
-        Object[] keys = dataMap.keySet().toArray();
-        while (count < countThreadsHold && count < size){
+        Object[] keys = timeMap.keySet().toArray();
+        while (count < countThreadsHold && count < timeSize){
             count++;
-            int i = random.nextInt(size);
+            int i = random.nextInt(timeSize);
             String key = keys[i].toString();
-            Entry<K, V> kvEntry = dataMap.get(key);
-            if (kvEntry.isExpire()) {
+            Long time = timeMap.get(key);
+            if (time < System.currentTimeMillis()) {
                 expireList.add(key);
                 expire_count++;
             }
@@ -68,23 +114,22 @@ public class CacheManager<K,V> implements Cache<K,V>, InitializingBean, Disposab
         Cache.logger.info(expire_count + " entries expired");
         for (String k :
                 expireList) {
-//            Cache.logger.info("deleting entry");
-//            Cache.logger.info("key:" + k + " expired!");
             dataMap.remove(k);
+            timeMap.remove(k);
+            eventExecutor.addEvent(Event.REMOVE,new Entry<>(k,null));
         }
         return expire_count > countThreadsHold / 4;
     }
 
     @Override
-    public Boolean add(K key, V value) {
-        add(key, value, 10L, TimeUnit.SECONDS);
-        return true;
-    }
-
-    @Override
-    public Boolean add(K key, V value, Long expireTime, TimeUnit unit) {
-        Entry<K,V> e = new Entry<>(key, value, expireTime, unit);
-        dataMap.put(key, e);
+    public Boolean add(Entry<K, V> e) {
+        if (e.getExpireTime() == null) {
+            e.setExpireTime(10L);
+            e.setUnit(TimeUnit.SECONDS);
+        }
+        dataMap.put(e.getKey(), e);
+        timeMap.put(e.getKey(), e.getCreateTime() + e.getUnit().toMillis(e.getExpireTime()));
+        eventExecutor.addEvent(Event.PUT, e);
         return true;
     }
 
@@ -92,15 +137,25 @@ public class CacheManager<K,V> implements Cache<K,V>, InitializingBean, Disposab
     public V get(K key) {
         Entry<K, V> e;
         e = dataMap.get(key);
-        if (e==null || e.isExpire()) {
+        if (e.isExpire()) {
             dataMap.remove(key);
+            eventExecutor.addEvent(Event.REMOVE,e);
             return null;
         }
+        e = wr.read(key);
+        if (e == null) {
+            return null;
+        }
+        if (e.isExpire()) {
+            wr.remove(key);
+            return null;
+        }
+        dataMap.put(key, e);
         return e.getValue();
     }
 
     @Override
-    public void destroy() throws Exception {
+    public void destroy(){
         logger.info("cache cleaning");
         scheduler.shutdown();
         while (true) {
@@ -109,6 +164,8 @@ public class CacheManager<K,V> implements Cache<K,V>, InitializingBean, Disposab
             }
         }
         dataMap.clear();
+        eventExecutor.destroy();
+        wr.clear();
     }
 
     @Override

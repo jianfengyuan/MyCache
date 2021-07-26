@@ -2,23 +2,26 @@ package com.kim.myCache.Entities;
 
 import java.io.Serializable;
 import java.util.concurrent.TimeUnit;
-
+/**
+ * @program: MyCache
+ * @description:
+ * @author: Kim_yuan
+ * @create: 2021-07-25 16:28
+ **/
 public class  Entry<K,V> implements Serializable {
     private static final long serialVersionUID = 1918373817726811488L;
     private K key;
     private V value;
     private Long expireTime;
-    private Long createTime;
-    private TimeUnit unit;
+    private Long createTime = System.currentTimeMillis();
+    private TimeUnit unit = TimeUnit.SECONDS;
 
     public Entry() {
-
     }
 
     public Entry(K key, V value) {
         this.key = key;
         this.value = value;
-        this.createTime = System.currentTimeMillis();
     }
 
     public Entry(K key, V value, Long expireTime, TimeUnit unit) {
@@ -32,6 +35,7 @@ public class  Entry<K,V> implements Serializable {
     public Boolean isExpire() {
         return System.currentTimeMillis() - unit.toMillis(expireTime)> createTime;
     }
+
     public K getKey() {
         return key;
     }
@@ -60,7 +64,11 @@ public class  Entry<K,V> implements Serializable {
         return createTime;
     }
 
-    public void setCreateTime(Long createTime) {
-        this.createTime = createTime;
+    public TimeUnit getUnit() {
+        return unit;
+    }
+
+    public void setUnit(TimeUnit unit) {
+        this.unit = unit;
     }
 }

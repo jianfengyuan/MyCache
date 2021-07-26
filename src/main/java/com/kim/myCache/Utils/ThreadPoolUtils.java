@@ -16,7 +16,7 @@ public class ThreadPoolUtils {
     }
 
     public static ExecutorService createExecutor(){
-        return new ThreadPoolExecutor(5, 100, 60, TimeUnit.SECONDS,
+        return new ThreadPoolExecutor(1, 1, 60, TimeUnit.SECONDS,
                 new LinkedBlockingDeque<>());
     }
 }
